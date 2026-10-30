@@ -1,0 +1,2435 @@
+{
+  "info": {
+    "_postman_id": "feeeeeff-fc17-4935-af72-fc812ad57405",
+    "name": "LoungeAccessSystem API",
+    "description": "# Airport Lounge Access System - API test collection\n\n## Setup\n1. Start the app from a **fresh JVM**: `mvn spring-boot:run` (H2 is in-memory, demo data is re-seeded on every start).\n2. Postman -> **Import** `LoungeAccessSystem.postman_collection.json` and `LoungeAccessSystem.postman_environment.json`; select the *LoungeAccessSystem - Local* environment.\n3. Credentials are HTTP Basic `reception` / `lounge@123` (collection-level auth, change in the environment if you changed `lounge.security.*`).\n\n## Running\n* **Collection Runner** (recommended): run all folders in order, delay 0 ms, *Persist variables* off. Every request has tests; the whole run should be green.\n* **Manual**: open a request, read its *Description* (purpose, preconditions, steps, expected result), press **Send**, check **Test Results**.\n* Folders are order-dependent: tests store pass tokens in collection variables (`passToken_*`) and later folders consume them, and approvals consume quota/vouchers.\n* **Re-running** the whole collection needs an app restart (quota, vouchers and passes are real state). Before restarting, you can also reset the collection variables `passToken_*`.\n\n## Coverage map\n| Folder | Verifies |\n|---|---|\n| 00 | App up, OpenAPI public, 401 without/with wrong credentials |\n| 01 | Axis 3-month spend rule, exclusions (fuel/cash/wallet), new-card exception, idempotent re-issue |\n| 02 | HDFC debit: spend + voucher (missing / malformed / unknown / other card / used / expired / valid), single-use voucher |\n| 03 | HDFC credit tiers: Infinia unlimited, Millennia quota, Regalia Gold approve |\n| 04 | Generic fallback (ICICI) and UNSUPPORTED_CARD (Kotak) |\n| 05 | BIN lookup, CARD_NOT_FOUND, CUSTOMER_MISMATCH, bean validation, malformed JSON |\n| 06 | Full quota exhaustion on a 3-visit card |\n| 07 | Redeem happy path, double redeem, wrong lounge, unknown token, validation |\n| 08 | Analytics: totals, rates, denial breakdown, banks, tiers, peak hours, parameter validation |\n\n## Manual-only scenarios (not automatable in one run)\n* **Expired pass (HTTP 410)**: start with `--lounge.pass.validity-minutes=1`, run 1.1, wait 61 seconds, run 7.4 -> 410 Gone with *Pass expired*. The quota is released automatically (re-run 1.1 -> new pass, `visitsRemaining` back to 1).\n* **Blocked / expired card (CARD_INACTIVE)**: in the H2 console (`/h2-console`, JDBC URL `jdbc:h2:mem:loungedb`, user `sa`) run `UPDATE cards SET active = FALSE WHERE last4 = '0011';` then run 1.1 -> `CARD_INACTIVE`.\n* **Quarter / month boundaries**: demo data is generated relative to today. To test boundaries, insert rows into `spend_history` with dates on the first/last day of the window and re-run the relevant request.\n* **Concurrency**: fire request 6.1 twice in parallel (Runner with iterations is sequential; use two Postman windows or `curl &`) - the card row lock guarantees quota is never over-consumed.\n\n## Test-data cheat sheet\n| customerId | PAN | Scenario |\n|---:|---|---|\n| 1 | 4147200000000011 | Axis ACE qualifying |\n| 2 | 4147200000000029 | Axis ACE new card |\n| 3 | 4147200000000037 | Axis ACE low spend |\n| 4 | 4386100000000013 | HDFC Platinum Debit (vouchers 482915037261 valid, 719304286150 expired, 260481937502 used) |\n| 5 | 4386100000000021 | HDFC Platinum Debit low spend (voucher 530918274466) |\n| 6 | 4386200000000019 | HDFC Infinia |\n| 7 | 5241900000000012 | HDFC Millennia, quota used |\n| 8 | 5241910000000010 | HDFC Regalia Gold |\n| 9 | 6521000000000012 | ICICI Coral |\n| 10 | 4000100000000018 | Kotak (unsupported) |\n",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{username}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{password}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "00 - Smoke & Security",
+      "description": "Run first. Confirms the app is up, Swagger is reachable and the API is protected by HTTP Basic.",
+      "item": [
+        {
+          "name": "Swagger API docs reachable (no auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "c34315a7-e8b4-4489-ad28-8676aefd66c6",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"documents check-eligibility\", () => pm.expect(d.paths).to.have.property(\"/api/v1/lounge/check-eligibility\"));",
+                  "pm.test(\"documents redeem-pass\", () => pm.expect(d.paths).to.have.property(\"/api/v1/lounge/redeem-pass\"));",
+                  "pm.test(\"documents analytics summary\", () => pm.expect(d.paths).to.have.property(\"/api/v1/analytics/summary\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v3/api-docs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v3",
+                "api-docs"
+              ]
+            },
+            "description": "**Purpose**\nVerify the service is running and OpenAPI docs are public.\n\n**Preconditions**\nApplication started with `mvn spring-boot:run` (port 8080).\n\n**Steps**\n1. Send the request without credentials.\n\n**Expected result**\n200 and an OpenAPI document containing the three lounge/analytics paths.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "API rejects missing credentials (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "09ac31eb-29cd-4ed6-9220-78b75dc4ba61",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "summary"
+              ]
+            },
+            "description": "**Purpose**\nProve the business API cannot be called anonymously.\n\n**Preconditions**\nApplication running.\n\n**Steps**\n1. Send the request with **No Auth** (already overridden on this request).\n\n**Expected result**\n401 Unauthorized.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "API rejects wrong password (401)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "72e82160-b830-477b-81f2-07570be326fe",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "summary"
+              ]
+            },
+            "description": "**Purpose**\nProve bad credentials are refused.\n\n**Preconditions**\nApplication running.\n\n**Steps**\n1. Send the request with a deliberately wrong Basic password (set on this request).\n\n**Expected result**\n401 Unauthorized.",
+            "auth": {
+              "type": "basic",
+              "basic": [
+                {
+                  "key": "username",
+                  "value": "{{username}}",
+                  "type": "string"
+                },
+                {
+                  "key": "password",
+                  "value": "wrong-password",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "01 - Axis Bank (spend-linked, 3 months)",
+      "description": "Axis rule: >= INR 50,000 qualifying spend in the preceding 3 full calendar months (cash, wallet reload and fuel excluded). New-card exception waives spend until the end of (issue month + 3). Quota 2 visits per quarter.",
+      "item": [
+        {
+          "name": "1.1 Axis ACE - qualifying spend -> APPROVED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "3b84e522-d34f-4365-959c-25d6625a66de",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 1\", () => pm.expect(j.visitsRemaining).to.eql(1));",
+                  "pm.collectionVariables.set(\"passToken_axis\", j.loungePassToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 1 spent 35,000 + 18,000 + 9,000 = 62,000 in the preceding 3 months.\n\n**Preconditions**\nFresh application start (demo data loaded). Authentication is inherited from the collection (HTTP Basic using `{{username}}` / `{{password}}`).\n\n**Steps**\n1. Open the request body: card `{{pan_axis_ok}}`, customer `{{cust_axis_ok}}`, lounge `{{loungeId}}`.\n2. Click **Send**.\n3. Check the **Test Results** tab - all tests must pass.\n4. The pass token is stored in the collection variable `passToken_axis` (used later by the redeem tests).\n\n**Expected result**\n`eligible=true`, `visitsRemaining=1` (2 per quarter, this entry uses one), `loungePassToken` = `LP-...`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_axis_ok}}\",\n  \"customerId\": {{cust_axis_ok}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.2 Axis ACE - same card, same lounge again -> same pass (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "d421e7a5-b37c-402b-aa12-34f348b96075",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 1\", () => pm.expect(j.visitsRemaining).to.eql(1));",
+                  "pm.test(\"same pass re-issued (idempotent, no extra visit consumed)\", () => pm.expect(j.loungePassToken).to.eql(pm.collectionVariables.get(\"passToken_axis\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nA double-tap at the desk must not burn a second visit.\n\n**Preconditions**\nRequest 1.1 has just been executed and its pass is still valid (120 min).\n\n**Steps**\n1. Send the identical request as 1.1.\n2. Compare `loungePassToken` with the one from 1.1 (test does this automatically).\n\n**Expected result**\n`eligible=true` and the **same** token; `visitsRemaining` stays 1.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_axis_ok}}\",\n  \"customerId\": {{cust_axis_ok}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.3 Axis ACE - new card exception (no spend) -> APPROVED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "bb6888e4-de59-4fd6-ba82-b400dd053dc7",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 1\", () => pm.expect(j.visitsRemaining).to.eql(1));",
+                  "pm.test(\"reason mentions \\\"waived\\\"\", () => pm.expect(j.reason).to.include(\"waived\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 2's card was issued 20 days ago and has zero spend; the spend requirement is waived.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n2. Read `reason` - it states that the spend requirement is waived until a date.\n\n**Expected result**\n`eligible=true`, `visitsRemaining=1`, reason contains `waived`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_axis_new}}\",\n  \"customerId\": {{cust_axis_new}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "1.4 Axis ACE - fuel/cash/wallet excluded -> INSUFFICIENT_SPEND",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "80e50c20-581c-4628-ad31-2445990164ff",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = INSUFFICIENT_SPEND\", () => pm.expect(j.denialReason).to.eql(\"INSUFFICIENT_SPEND\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"reason mentions \\\"20000.00\\\"\", () => pm.expect(j.reason).to.include(\"20000.00\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 3 has 20,000 retail spend in the window. The 25,000 fuel, 15,000 cash, 6,000 wallet reload and 40,000 spent in the *current* month do not count.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n2. Confirm the reason quotes a qualifying spend of 20000.00 vs the required 50000.00.\n\n**Expected result**\n`eligible=false`, `denialReason=INSUFFICIENT_SPEND`, no token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_axis_low}}\",\n  \"customerId\": {{cust_axis_low}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 - HDFC Debit (quarterly spend + 12-digit voucher)",
+      "description": "HDFC debit rule: >= INR 10,000 qualifying spend in the previous calendar quarter AND a valid, unused 12-digit voucher issued before entry. **Run in order**: the denial cases run before the approval so no pass exists yet (a live pass for the same lounge is returned as-is, which would mask later denials).",
+      "item": [
+        {
+          "name": "2.1 Expired voucher -> EXPIRED_VOUCHER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "1389dbdd-bf3c-455b-a616-60f9979dc2cf",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = EXPIRED_VOUCHER\", () => pm.expect(j.denialReason).to.eql(\"EXPIRED_VOUCHER\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nVoucher 719304286150 expired two days ago.\n\n**Preconditions**\nDemo data loaded; customer 4 has no pass yet.\n\n**Steps**\n1. Send the request (card `{{pan_hdfc_debit_ok}}`, voucher `{{voucher_expired}}`).\n\n**Expected result**\n`eligible=false`, `denialReason=EXPIRED_VOUCHER`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_ok}}\",\n  \"customerId\": {{cust_hdfc_debit_ok}},\n  \"loungeId\": \"{{loungeId}}\",\n  \"voucherCode\": \"{{voucher_expired}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.2 Already-used voucher -> INVALID_VOUCHER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "541b8070-4251-4f69-980e-ab2b0c979b04",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = INVALID_VOUCHER\", () => pm.expect(j.denialReason).to.eql(\"INVALID_VOUCHER\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"reason mentions \\\"already been used\\\"\", () => pm.expect(j.reason).to.include(\"already been used\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nVoucher 260481937502 was consumed 40 days ago.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request with `{{voucher_used}}`.\n\n**Expected result**\n`eligible=false`, `denialReason=INVALID_VOUCHER`, reason mentions already used.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_ok}}\",\n  \"customerId\": {{cust_hdfc_debit_ok}},\n  \"loungeId\": \"{{loungeId}}\",\n  \"voucherCode\": \"{{voucher_used}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.3 Voucher missing -> INVALID_VOUCHER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "7e59af95-4490-4b7b-ae69-c42c25665d8e",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = INVALID_VOUCHER\", () => pm.expect(j.denialReason).to.eql(\"INVALID_VOUCHER\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"reason mentions \\\"12-digit\\\"\", () => pm.expect(j.reason).to.include(\"12-digit\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nA voucher is mandatory for HDFC debit cards.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request **without** `voucherCode`.\n\n**Expected result**\n`eligible=false`, `denialReason=INVALID_VOUCHER`, reason mentions 12-digit voucher.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_ok}}\",\n  \"customerId\": {{cust_hdfc_debit_ok}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.4 Voucher issued for another card -> INVALID_VOUCHER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "4b00a40b-3e1d-4cd1-bd74-d61102dbc659",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = INVALID_VOUCHER\", () => pm.expect(j.denialReason).to.eql(\"INVALID_VOUCHER\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"reason mentions \\\"not issued for this card\\\"\", () => pm.expect(j.reason).to.include(\"not issued for this card\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 5 presents customer 4's valid voucher.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request: card `{{pan_hdfc_debit_low}}` with voucher `{{voucher_valid}}`.\n\n**Expected result**\n`eligible=false`, `denialReason=INVALID_VOUCHER`, reason mentions not issued for this card.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_low}}\",\n  \"customerId\": {{cust_hdfc_debit_low}},\n  \"loungeId\": \"{{loungeId}}\",\n  \"voucherCode\": \"{{voucher_valid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.5 Valid voucher but spend too low -> INSUFFICIENT_SPEND",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "8681617e-5659-43f0-97eb-39b45cd21106",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = INSUFFICIENT_SPEND\", () => pm.expect(j.denialReason).to.eql(\"INSUFFICIENT_SPEND\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"reason mentions \\\"6500.00\\\"\", () => pm.expect(j.reason).to.include(\"6500.00\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 5 has a valid voucher but only 6,500 qualifying spend (10,000 wallet reload excluded).\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request with `{{voucher_low_spend_card}}`.\n\n**Expected result**\n`eligible=false`, `denialReason=INSUFFICIENT_SPEND`. The voucher is **not** consumed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_low}}\",\n  \"customerId\": {{cust_hdfc_debit_low}},\n  \"loungeId\": \"{{loungeId}}\",\n  \"voucherCode\": \"{{voucher_low_spend_card}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.6 Valid voucher + qualifying spend -> APPROVED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "7de098ef-95e9-4fe4-b975-c96dd4ff16f7",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 1\", () => pm.expect(j.visitsRemaining).to.eql(1));",
+                  "pm.collectionVariables.set(\"passToken_vikram\", j.loungePassToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 4: 14,500 qualifying spend (20,000 cash excluded) and valid voucher 482915037261.\n\n**Preconditions**\nRequests 2.1-2.4 executed (none consumed the voucher).\n\n**Steps**\n1. Send the request.\n2. Test saves the token in `passToken_vikram`.\n\n**Expected result**\n`eligible=true`, `visitsRemaining=1` (2 per quarter), voucher is now consumed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_ok}}\",\n  \"customerId\": {{cust_hdfc_debit_ok}},\n  \"loungeId\": \"{{loungeId}}\",\n  \"voucherCode\": \"{{voucher_valid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.7 Re-present at same lounge -> same pass (idempotent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "4ee7e752-45d9-4216-bfee-f3512c935c0b",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 1\", () => pm.expect(j.visitsRemaining).to.eql(1));",
+                  "pm.test(\"same pass re-issued (idempotent, no extra visit consumed)\", () => pm.expect(j.loungePassToken).to.eql(pm.collectionVariables.get(\"passToken_vikram\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nVoucher is already consumed, yet a repeat at the same lounge must return the existing pass.\n\n**Preconditions**\nRequest 2.6 succeeded.\n\n**Steps**\n1. Send the same body as 2.6.\n\n**Expected result**\n`eligible=true`, same token as 2.6.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_ok}}\",\n  \"customerId\": {{cust_hdfc_debit_ok}},\n  \"loungeId\": \"{{loungeId}}\",\n  \"voucherCode\": \"{{voucher_valid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "2.8 Re-use consumed voucher at a different lounge -> INVALID_VOUCHER",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "46af1ccd-1c21-4622-8df7-c73c8b5e5664",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = INVALID_VOUCHER\", () => pm.expect(j.denialReason).to.eql(\"INVALID_VOUCHER\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"reason mentions \\\"already been used\\\"\", () => pm.expect(j.reason).to.include(\"already been used\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nVouchers are single-use. At another lounge there is no live pass, so the voucher is validated and rejected.\n\n**Preconditions**\nRequest 2.6 succeeded.\n\n**Steps**\n1. Send the request with `loungeId={{loungeIdB}}`.\n\n**Expected result**\n`eligible=false`, `denialReason=INVALID_VOUCHER` (already used).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_hdfc_debit_ok}}\",\n  \"customerId\": {{cust_hdfc_debit_ok}},\n  \"loungeId\": \"{{loungeIdB}}\",\n  \"voucherCode\": \"{{voucher_valid}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 - HDFC Credit / Super-Premium tiers",
+      "description": "Millennia 1,00,000 / 1 visit; Regalia Gold 60,000 / 3 visits; Infinia & Diners Black unlimited with no spend threshold.",
+      "item": [
+        {
+          "name": "3.1 Infinia -> APPROVED, unlimited",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "7da3654c-bc39-4814-a500-ffccf69c23bc",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = -1\", () => pm.expect(j.visitsRemaining).to.eql(-1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nInfinia has no spend threshold and no visit cap.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n\n**Expected result**\n`eligible=true`, `visitsRemaining=-1` (unlimited).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_infinia}}\",\n  \"customerId\": {{cust_infinia}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.2 Millennia - quota already used -> QUOTA_EXCEEDED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "fae0acd6-fd3c-4365-a4ee-4f0bace9f886",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = QUOTA_EXCEEDED\", () => pm.expect(j.denialReason).to.eql(\"QUOTA_EXCEEDED\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"visitsRemaining = 0\", () => pm.expect(j.visitsRemaining).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 7 qualifies on spend (120,000) but the single quarterly visit was already redeemed (seeded).\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n\n**Expected result**\n`eligible=false`, `denialReason=QUOTA_EXCEEDED`, `visitsRemaining=0`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_millennia}}\",\n  \"customerId\": {{cust_millennia}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "3.3 Regalia Gold - 75,000 >= 60,000 -> APPROVED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "54f81aa0-ab7c-4925-8c08-615a0fd015a3",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 2\", () => pm.expect(j.visitsRemaining).to.eql(2));",
+                  "pm.collectionVariables.set(\"passToken_regalia\", j.loungePassToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nRegalia Gold allows 3 visits per quarter.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n2. Token saved to `passToken_regalia` for the redeem tests.\n\n**Expected result**\n`eligible=true`, `visitsRemaining=2`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_regalia}}\",\n  \"customerId\": {{cust_regalia}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 - Generic fallback & unsupported cards",
+      "description": "ICICI/SBI use the generic strategy (INR 25,000 previous-quarter spend, 2 visits). Other banks (Kotak) are unsupported.",
+      "item": [
+        {
+          "name": "4.1 ICICI Coral (generic) -> APPROVED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "ec97c8e1-5ab8-4f21-94ef-6f73a2bcdff5",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 0\", () => pm.expect(j.visitsRemaining).to.eql(0));",
+                  "pm.collectionVariables.set(\"passToken_icici\", j.loungePassToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 9: 30,000 qualifying spend; one visit already redeemed (seeded).\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n2. Token saved to `passToken_icici`.\n\n**Expected result**\n`eligible=true`, `visitsRemaining=0` (2 - 1 seeded - 1 now).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_icici}}\",\n  \"customerId\": {{cust_icici}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "4.2 Kotak debit -> UNSUPPORTED_CARD",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "fba05b3a-29b1-421a-9951-f4a241d578c0",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = UNSUPPORTED_CARD\", () => pm.expect(j.denialReason).to.eql(\"UNSUPPORTED_CARD\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nNo lounge programme is configured for Kotak.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n\n**Expected result**\n`eligible=false`, `denialReason=UNSUPPORTED_CARD`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_kotak}}\",\n  \"customerId\": {{cust_kotak}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 - Card lookup & validation edge cases",
+      "description": "Card resolution (full PAN or BIN), ownership checks and request validation.",
+      "item": [
+        {
+          "name": "5.1 Look up by 6-digit BIN -> resolves customer's card",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "15bdac23-bbe6-4c9a-bed7-af8a2ec9dd5f",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"same pass re-issued (idempotent, no extra visit consumed)\", () => pm.expect(j.loungePassToken).to.eql(pm.collectionVariables.get(\"passToken_axis\")));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nReception may only have the BIN; it is resolved within the customer's own cards.\n\n**Preconditions**\nRequest 1.1 executed (customer 1 has a live pass).\n\n**Steps**\n1. Send the request with `cardNumber=414720`, customer 1.\n\n**Expected result**\nResolves to the Axis ACE card and re-issues its live pass (`eligible=true`, same token).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"414720\",\n  \"customerId\": {{cust_axis_ok}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.2 Unknown card -> CARD_NOT_FOUND",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "e6a09ac6-7598-4fa8-a1c9-ae205af36c8c",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = CARD_NOT_FOUND\", () => pm.expect(j.denialReason).to.eql(\"CARD_NOT_FOUND\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nA PAN that is not in the system is logged as a denial.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send the request with PAN 4999999999999999.\n\n**Expected result**\n`eligible=false`, `denialReason=CARD_NOT_FOUND`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"4999999999999999\",\n  \"customerId\": 1,\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.3 Card belongs to someone else -> CUSTOMER_MISMATCH",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "6f37fdef-5451-44c9-8249-6a5fd2f3dcae",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = CUSTOMER_MISMATCH\", () => pm.expect(j.denialReason).to.eql(\"CUSTOMER_MISMATCH\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCustomer 2 presents customer 1's card.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request: PAN `{{pan_axis_ok}}` with customerId 2.\n\n**Expected result**\n`eligible=false`, `denialReason=CUSTOMER_MISMATCH`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_axis_ok}}\",\n  \"customerId\": {{cust_axis_new}},\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.4 Malformed card length (9 digits) -> CARD_NOT_FOUND",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "24f44a56-3609-4220-a062-b14aea3984c6",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = CARD_NOT_FOUND\", () => pm.expect(j.denialReason).to.eql(\"CARD_NOT_FOUND\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\n9-11 digits is neither a BIN (6-8) nor a PAN (13-19); passes bean validation but is refused by the service.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send the request with `cardNumber=123456789`.\n\n**Expected result**\n`eligible=false`, `denialReason=CARD_NOT_FOUND`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"123456789\",\n  \"customerId\": 1,\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.5 Validation - missing fields -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "60d95e67-d961-4a0f-aa6b-61338a3242c1",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Validation Error\", () => pm.expect(p.title).to.eql(\"Validation Error\"));",
+                  "pm.test(\"validation error reported for cardNumber\", () => pm.expect(p.errors).to.have.property(\"cardNumber\"));",
+                  "pm.test(\"customerId error reported\", () => pm.expect(p.errors).to.have.property(\"customerId\"));",
+                  "pm.test(\"loungeId error reported\", () => pm.expect(p.errors).to.have.property(\"loungeId\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nBean-validation failure returns an RFC 7807 problem with per-field errors.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send an empty JSON object `{}`.\n\n**Expected result**\n400 with `errors.cardNumber`, `errors.customerId`, `errors.loungeId`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.6 Validation - illegal characters in card number -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "62c7ec28-0711-42de-bd2a-df82772e68e3",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Validation Error\", () => pm.expect(p.title).to.eql(\"Validation Error\"));",
+                  "pm.test(\"validation error reported for cardNumber\", () => pm.expect(p.errors).to.have.property(\"cardNumber\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nCard number must be 6-25 digits/spaces/hyphens.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send `cardNumber=ABCD-EFGH`.\n\n**Expected result**\n400 with `errors.cardNumber`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"ABCD-EFGH\",\n  \"customerId\": 1,\n  \"loungeId\": \"{{loungeId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "5.7 Malformed JSON -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "b4acbaaa-ca4a-4806-8b12-6cb78259eeeb",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nUnparseable body is rejected cleanly.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send a body that is not valid JSON.\n\n**Expected result**\n400 problem document.",
+            "body": {
+              "mode": "raw",
+              "raw": "{ this is not json",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 - Quota exhaustion flow (Regalia Gold, 3 visits)",
+      "description": "Walks one card through its whole quarterly quota. Different lounges are used on purpose so the idempotent re-issue (same lounge) does not interfere. Run after folder 03 (request 3.3 already consumed visit #1).",
+      "item": [
+        {
+          "name": "6.1 Regalia visit #2 at lounge B -> APPROVED (1 left)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "2402f8a6-a8f5-4bea-8b6a-268512f6f3ce",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 1\", () => pm.expect(j.visitsRemaining).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nSecond of three visits.\n\n**Preconditions**\nRequest 3.3 executed.\n\n**Steps**\n1. Send the request (loungeId = `{{loungeIdB}}`).\n\n**Expected result**\n`eligible=true`, `visitsRemaining=1`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_regalia}}\",\n  \"customerId\": {{cust_regalia}},\n  \"loungeId\": \"{{loungeIdB}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6.2 Regalia visit #3 at lounge C -> APPROVED (0 left)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "65ca55b8-a976-44eb-aaf5-6280b19a568b",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = true\", () => pm.expect(j.eligible).to.eql(true));",
+                  "pm.test(\"lounge pass token issued (LP-...)\", () => pm.expect(j.loungePassToken).to.be.a(\"string\").and.match(/^LP-[A-Z0-9]{20}$/));",
+                  "pm.test(\"denialReason is null\", () => pm.expect(j.denialReason).to.be.null);",
+                  "pm.test(\"pass has an expiry\", () => pm.expect(j.passExpiresAt).to.be.a(\"string\"));",
+                  "pm.test(\"visitsRemaining = 0\", () => pm.expect(j.visitsRemaining).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nLast allowed visit.\n\n**Preconditions**\nRequest 6.1 executed.\n\n**Steps**\n1. Send the request (loungeId = `{{loungeIdC}}`).\n\n**Expected result**\n`eligible=true`, `visitsRemaining=0`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_regalia}}\",\n  \"customerId\": {{cust_regalia}},\n  \"loungeId\": \"{{loungeIdC}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "6.3 Regalia visit #4 at lounge D -> QUOTA_EXCEEDED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "5d381e46-a07c-4dd7-b584-9cff70707e90",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 2000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(2000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"eligible = false\", () => pm.expect(j.eligible).to.eql(false));",
+                  "pm.test(\"denialReason = QUOTA_EXCEEDED\", () => pm.expect(j.denialReason).to.eql(\"QUOTA_EXCEEDED\"));",
+                  "pm.test(\"no pass token issued\", () => pm.expect(j.loungePassToken).to.be.null);",
+                  "pm.test(\"human readable reason present\", () => pm.expect(j.reason).to.be.a(\"string\").and.not.empty);",
+                  "pm.test(\"visitsRemaining = 0\", () => pm.expect(j.visitsRemaining).to.eql(0));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/check-eligibility",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "check-eligibility"
+              ]
+            },
+            "description": "**Purpose**\nQuota exhausted - the attempt is denied and logged.\n\n**Preconditions**\nRequests 3.3, 6.1 and 6.2 executed.\n\n**Steps**\n1. Send the request (loungeId = `{{loungeIdD}}`).\n\n**Expected result**\n`eligible=false`, `denialReason=QUOTA_EXCEEDED`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cardNumber\": \"{{pan_regalia}}\",\n  \"customerId\": {{cust_regalia}},\n  \"loungeId\": \"{{loungeIdD}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 - Redeem pass at reception terminal",
+      "description": "`POST /api/v1/lounge/redeem-pass` marks an issued pass as used. Requires the pass variables saved by folders 01-04.",
+      "item": [
+        {
+          "name": "7.1 Redeem with unknown token -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "ef1e5eb1-28cb-4a75-b324-569a4ca4df80",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 404\", () => pm.expect(p.status).to.eql(404));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Not Found\", () => pm.expect(p.title).to.eql(\"Not Found\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nAn invented token must not redeem anything.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send token `LP-DOESNOTEXIST000000`.\n\n**Expected result**\n404 Not Found.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passToken\": \"LP-DOESNOTEXIST000000\",\n  \"loungeId\": \"{{loungeId}}\",\n  \"terminalId\": \"T-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.2 Redeem at the wrong lounge -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "d10bece9-601e-4942-ba70-34add4946d9e",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 409\", () => pm.expect(p.status).to.eql(409));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Conflict\", () => pm.expect(p.title).to.eql(\"Conflict\"));",
+                  "pm.test(\"detail contains \\\"different lounge\\\"\", () => pm.expect(p.detail).to.include(\"different lounge\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nA pass issued for HYD-T1-ENCORE cannot be used at another lounge.\n\n**Preconditions**\nRequest 3.3 saved `passToken_regalia`.\n\n**Steps**\n1. Send `{{passToken_regalia}}` with `loungeId={{loungeIdB}}`.\n\n**Expected result**\n409 Conflict, detail says different lounge.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passToken\": \"{{passToken_regalia}}\",\n  \"loungeId\": \"{{loungeIdB}}\",\n  \"terminalId\": \"T-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.3 Validation - missing passToken -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "4ea6624b-b4ea-42d7-864f-a707207ea4e1",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Validation Error\", () => pm.expect(p.title).to.eql(\"Validation Error\"));",
+                  "pm.test(\"validation error reported for passToken\", () => pm.expect(p.errors).to.have.property(\"passToken\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nBean validation on the redeem request.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send `{}`.\n\n**Expected result**\n400 with `errors.passToken`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.4 Redeem Axis pass at correct lounge -> REDEEMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "c2626ffc-1315-450f-86d6-5f26ae7a5e28",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"status = REDEEMED\", () => pm.expect(j.status).to.eql(\"REDEEMED\"));",
+                  "pm.test(\"redeemedAt populated\", () => pm.expect(j.redeemedAt).to.be.a(\"string\"));",
+                  "pm.test(\"token echoed\", () => pm.expect(j.passToken).to.eql(pm.collectionVariables.get(\"passToken_axis\")));",
+                  "pm.test(\"confirmation message\", () => pm.expect(j.message).to.include(\"redeemed\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nHappy path at the reception terminal.\n\n**Preconditions**\nRequest 1.1 saved `passToken_axis` (pass valid 120 minutes).\n\n**Steps**\n1. Send `{{passToken_axis}}`, loungeId `{{loungeId}}`, terminalId `T-01`.\n\n**Expected result**\n200, `status=REDEEMED`, `redeemedAt` set.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passToken\": \"{{passToken_axis}}\",\n  \"loungeId\": \"{{loungeId}}\",\n  \"terminalId\": \"T-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.5 Redeem the same pass again -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "9e8ccac2-32a2-40da-b63a-af9b4324ec23",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 409\", () => pm.expect(p.status).to.eql(409));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Conflict\", () => pm.expect(p.title).to.eql(\"Conflict\"));",
+                  "pm.test(\"detail contains \\\"already redeemed\\\"\", () => pm.expect(p.detail).to.include(\"already redeemed\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nA pass is single-use.\n\n**Preconditions**\nRequest 7.4 succeeded.\n\n**Steps**\n1. Send the same body as 7.4.\n\n**Expected result**\n409 Conflict, detail says already redeemed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passToken\": \"{{passToken_axis}}\",\n  \"loungeId\": \"{{loungeId}}\",\n  \"terminalId\": \"T-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.6 Redeem ICICI pass -> REDEEMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "ec305950-a6ef-47af-85ce-beb52eb249f5",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status = REDEEMED\", () => pm.expect(pm.response.json().status).to.eql(\"REDEEMED\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nSecond happy-path redemption (different bank).\n\n**Preconditions**\nRequest 4.1 saved `passToken_icici`.\n\n**Steps**\n1. Send `{{passToken_icici}}`.\n\n**Expected result**\n200 and `status=REDEEMED`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passToken\": \"{{passToken_icici}}\",\n  \"loungeId\": \"{{loungeId}}\",\n  \"terminalId\": \"T-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "7.7 Redeem Regalia pass -> REDEEMED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "30d48a2c-98db-4811-b5d8-627461b7513d",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"status = REDEEMED\", () => pm.expect(pm.response.json().status).to.eql(\"REDEEMED\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/lounge/redeem-pass",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "lounge",
+                "redeem-pass"
+              ]
+            },
+            "description": "**Purpose**\nHappy path for the HDFC credit pass.\n\n**Preconditions**\nRequest 3.3 saved `passToken_regalia`.\n\n**Steps**\n1. Send `{{passToken_regalia}}`.\n\n**Expected result**\n200 and `status=REDEEMED`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"passToken\": \"{{passToken_regalia}}\",\n  \"loungeId\": \"{{loungeId}}\",\n  \"terminalId\": \"T-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 - Analytics",
+      "description": "Run last so the numbers reflect every attempt made above plus the seeded history. Window = last N hours (default 24). 'approved' includes redeemed passes.",
+      "item": [
+        {
+          "name": "8.1 Summary (24h)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "cbd4900a-fc87-4d1b-9259-5f12ac128a6c",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"totalAttempts = approved + denied\", () => pm.expect(s.totalAttempts).to.eql(s.approved + s.denied));",
+                  "pm.test(\"redeemed <= approved\", () => pm.expect(s.redeemed).to.be.at.most(s.approved));",
+                  "pm.test(\"rates add up to ~100%\", () => pm.expect(s.approvalRatePercent + s.rejectionRatePercent).to.be.closeTo(100, 0.05));",
+                  "const reasons = [\"INSUFFICIENT_SPEND\",\"EXPIRED_VOUCHER\",\"INVALID_VOUCHER\",\"QUOTA_EXCEEDED\",\"UNSUPPORTED_CARD\",\"CARD_NOT_FOUND\",\"CARD_INACTIVE\",\"CUSTOMER_MISMATCH\"];",
+                  "pm.test(\"all 8 denial reasons present\", () => reasons.forEach(r => pm.expect(s.denialsByReason).to.have.property(r)));",
+                  "pm.test(\"denial counts add up to denied\", () => pm.expect(Object.values(s.denialsByReason).reduce((a,b)=>a+b,0)).to.eql(s.denied));",
+                  "pm.test(\"seeded + test denials visible\", () => { pm.expect(s.denialsByReason.INSUFFICIENT_SPEND).to.be.at.least(2); pm.expect(s.denialsByReason.EXPIRED_VOUCHER).to.be.at.least(1); pm.expect(s.denialsByReason.QUOTA_EXCEEDED).to.be.at.least(1); pm.expect(s.denialsByReason.UNSUPPORTED_CARD).to.be.at.least(1); pm.expect(s.denialsByReason.CARD_NOT_FOUND).to.be.at.least(1); });",
+                  "pm.test(\"per-bank attempts add up\", () => pm.expect(s.byBank.reduce((a,b)=>a+b.attempts,0)).to.eql(s.totalAttempts));",
+                  "pm.test(\"HDFC and AXIS appear in bank distribution\", () => { const banks = s.byBank.map(b=>b.bank); pm.expect(banks).to.include.members([\"HDFC\",\"AXIS\"]); });",
+                  "pm.test(\"topCardTiers has at most 5 entries, sorted desc\", () => { pm.expect(s.topCardTiers.length).to.be.at.most(5); for (let i=1;i<s.topCardTiers.length;i++) pm.expect(s.topCardTiers[i-1].attempts).to.be.at.least(s.topCardTiers[i].attempts); });",
+                  "pm.test(\"24 hourly buckets\", () => pm.expect(s.hourlyDistribution.length).to.eql(24));",
+                  "pm.test(\"peak hours: max 3, non-zero\", () => { pm.expect(s.peakEntryHours.length).to.be.within(1,3); s.peakEntryHours.forEach(h => pm.expect(h.attempts).to.be.above(0)); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/summary?hours=24",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "24"
+                }
+              ]
+            },
+            "description": "**Purpose**\nReal-time totals, approval vs rejection rate, denials by reason, bank distribution, top card tiers and peak hours.\n\n**Preconditions**\nFolders 01-07 executed (or at least the demo data is loaded).\n\n**Steps**\n1. Send the request (default `hours=24`).\n2. Inspect `approvalRatePercent` + `rejectionRatePercent` (= 100).\n3. Inspect `denialsByReason` - every reason is listed, zero when unseen.\n4. Inspect `byBank`, `topCardTiers`, `peakEntryHours` (max 3) and `hourlyDistribution` (24 buckets).\n\n**Expected result**\n200 with the consistency checks in the Test Results tab passing."
+          },
+          "response": []
+        },
+        {
+          "name": "8.2 Summary - narrow window (1h)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "26f545c2-6c70-4efc-80b2-af6c76cbe258",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const s = pm.response.json();",
+                  "pm.test(\"window is 1 hour\", () => pm.expect((new Date(s.windowEnd.substring(0,19)) - new Date(s.windowStart.substring(0,19)))/3600000).to.be.closeTo(1, 0.01));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/summary?hours=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "**Purpose**\nShorter windows exclude older seeded events.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send with `hours=1`.\n\n**Expected result**\n200; `windowEnd - windowStart` is one hour; totals are <= the 24h totals."
+          },
+          "response": []
+        },
+        {
+          "name": "8.3 Denials by reason",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "a6a0652e-03f5-4bf3-9888-8b9a5029eec2",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const d = pm.response.json();",
+                  "pm.test(\"contains INSUFFICIENT_SPEND >= 2\", () => pm.expect(d.INSUFFICIENT_SPEND).to.be.at.least(2));",
+                  "pm.test(\"contains all reasons\", () => pm.expect(Object.keys(d).length).to.eql(8));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/denials",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "denials"
+              ]
+            },
+            "description": "**Purpose**\nDedicated endpoint for the denial breakdown.\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n\n**Expected result**\n200 and a JSON map of reason -> count."
+          },
+          "response": []
+        },
+        {
+          "name": "8.4 Peak entry hours",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "2f2c707d-1b12-4995-8f81-9ded1b9d059a",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "const h = pm.response.json();",
+                  "pm.test(\"1-3 buckets, sorted desc\", () => { pm.expect(h.length).to.be.within(1,3); for (let i=1;i<h.length;i++) pm.expect(h[i-1].attempts).to.be.at.least(h[i].attempts); });",
+                  "pm.test(\"label format HH:00-HH:59\", () => pm.expect(h[0].label).to.match(/^\\d{2}:00-\\d{2}:59$/));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/peak-hours",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "peak-hours"
+              ]
+            },
+            "description": "**Purpose**\nBusiest hours of the day (top 3).\n\n**Preconditions**\nDemo data loaded.\n\n**Steps**\n1. Send the request.\n\n**Expected result**\n200 and up to three `{hour,label,attempts}` entries, busiest first."
+          },
+          "response": []
+        },
+        {
+          "name": "8.5 Validation - hours=0 -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "6ce4f356-3990-4707-88e8-1653e3a17e1d",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Validation Error\", () => pm.expect(p.title).to.eql(\"Validation Error\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/summary?hours=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "0"
+                }
+              ]
+            },
+            "description": "**Purpose**\n`hours` must be 1..8760.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send with `hours=0`.\n\n**Expected result**\n400 problem document."
+          },
+          "response": []
+        },
+        {
+          "name": "8.6 Validation - hours=99999 -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "2bc9dbd2-4989-4f89-b086-e837719e43b5",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Validation Error\", () => pm.expect(p.title).to.eql(\"Validation Error\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/analytics/summary?hours=99999",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "analytics",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "hours",
+                  "value": "99999"
+                }
+              ]
+            },
+            "description": "**Purpose**\nUpper bound check.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send with `hours=99999`.\n\n**Expected result**\n400 problem document."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "reception",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "lounge@123",
+      "type": "string"
+    },
+    {
+      "key": "loungeId",
+      "value": "HYD-T1-ENCORE",
+      "type": "string"
+    },
+    {
+      "key": "loungeIdB",
+      "value": "DEL-T3-PLAZA",
+      "type": "string"
+    },
+    {
+      "key": "loungeIdC",
+      "value": "BOM-T2-ENCORE",
+      "type": "string"
+    },
+    {
+      "key": "loungeIdD",
+      "value": "BLR-T1-ENCORE",
+      "type": "string"
+    },
+    {
+      "key": "cust_axis_ok",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "cust_axis_new",
+      "value": "2",
+      "type": "string"
+    },
+    {
+      "key": "cust_axis_low",
+      "value": "3",
+      "type": "string"
+    },
+    {
+      "key": "cust_hdfc_debit_ok",
+      "value": "4",
+      "type": "string"
+    },
+    {
+      "key": "cust_hdfc_debit_low",
+      "value": "5",
+      "type": "string"
+    },
+    {
+      "key": "cust_infinia",
+      "value": "6",
+      "type": "string"
+    },
+    {
+      "key": "cust_millennia",
+      "value": "7",
+      "type": "string"
+    },
+    {
+      "key": "cust_regalia",
+      "value": "8",
+      "type": "string"
+    },
+    {
+      "key": "cust_icici",
+      "value": "9",
+      "type": "string"
+    },
+    {
+      "key": "cust_kotak",
+      "value": "10",
+      "type": "string"
+    },
+    {
+      "key": "pan_axis_ok",
+      "value": "4147200000000011",
+      "type": "string"
+    },
+    {
+      "key": "pan_axis_new",
+      "value": "4147200000000029",
+      "type": "string"
+    },
+    {
+      "key": "pan_axis_low",
+      "value": "4147200000000037",
+      "type": "string"
+    },
+    {
+      "key": "pan_hdfc_debit_ok",
+      "value": "4386100000000013",
+      "type": "string"
+    },
+    {
+      "key": "pan_hdfc_debit_low",
+      "value": "4386100000000021",
+      "type": "string"
+    },
+    {
+      "key": "pan_infinia",
+      "value": "4386200000000019",
+      "type": "string"
+    },
+    {
+      "key": "pan_millennia",
+      "value": "5241900000000012",
+      "type": "string"
+    },
+    {
+      "key": "pan_regalia",
+      "value": "5241910000000010",
+      "type": "string"
+    },
+    {
+      "key": "pan_icici",
+      "value": "6521000000000012",
+      "type": "string"
+    },
+    {
+      "key": "pan_kotak",
+      "value": "4000100000000018",
+      "type": "string"
+    },
+    {
+      "key": "voucher_valid",
+      "value": "482915037261",
+      "type": "string"
+    },
+    {
+      "key": "voucher_expired",
+      "value": "719304286150",
+      "type": "string"
+    },
+    {
+      "key": "voucher_used",
+      "value": "260481937502",
+      "type": "string"
+    },
+    {
+      "key": "voucher_low_spend_card",
+      "value": "530918274466",
+      "type": "string"
+    },
+    {
+      "key": "passToken_axis",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "passToken_regalia",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "passToken_icici",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "passToken_vikram",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

@@ -1,0 +1,67 @@
+spring:
+  application:
+    name: lounge-access-system
+  datasource:
+    url: jdbc:h2:mem:loungedb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+server:
+  port: 8080
+  error:
+    include-message: never
+    include-stacktrace: never
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+
+# ---------------------------------------------------------------------------
+# Lounge business rules (all amounts in INR). Override per environment.
+# ---------------------------------------------------------------------------
+lounge:
+  timezone: Asia/Kolkata
+  bootstrap:
+    enabled: true            # seeds demo cards / spend / vouchers (disable in prod)
+  security:
+    username: reception
+    password: lounge@123     # demo only - inject via env var / vault in real deployments
+    card-hash-pepper: change-me-in-production-use-a-kms-managed-secret
+  pass:
+    validity-minutes: 120
+  axis:
+    minimum-spend: 50000
+    lookback-months: 3
+    new-card-waiver-months: 3
+    visits-per-quarter: 2
+  hdfc-debit:
+    minimum-spend: 10000
+    visits-per-quarter: 2
+  generic:
+    minimum-spend: 25000
+    visits-per-quarter: 2
+    supported-banks: ICICI,SBI
+
+logging:
+  level:
+    root: INFO
+    com.lounge.access: INFO
