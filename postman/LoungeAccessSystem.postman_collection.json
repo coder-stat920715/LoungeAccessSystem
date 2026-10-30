@@ -1,8 +1,8 @@
 {
   "info": {
-    "_postman_id": "feeeeeff-fc17-4935-af72-fc812ad57405",
+    "_postman_id": "f128da99-4268-4b42-ada2-d66a16d55a51",
     "name": "LoungeAccessSystem API",
-    "description": "# Airport Lounge Access System - API test collection\n\n## Setup\n1. Start the app from a **fresh JVM**: `mvn spring-boot:run` (H2 is in-memory, demo data is re-seeded on every start).\n2. Postman -> **Import** `LoungeAccessSystem.postman_collection.json` and `LoungeAccessSystem.postman_environment.json`; select the *LoungeAccessSystem - Local* environment.\n3. Credentials are HTTP Basic `reception` / `lounge@123` (collection-level auth, change in the environment if you changed `lounge.security.*`).\n\n## Running\n* **Collection Runner** (recommended): run all folders in order, delay 0 ms, *Persist variables* off. Every request has tests; the whole run should be green.\n* **Manual**: open a request, read its *Description* (purpose, preconditions, steps, expected result), press **Send**, check **Test Results**.\n* Folders are order-dependent: tests store pass tokens in collection variables (`passToken_*`) and later folders consume them, and approvals consume quota/vouchers.\n* **Re-running** the whole collection needs an app restart (quota, vouchers and passes are real state). Before restarting, you can also reset the collection variables `passToken_*`.\n\n## Coverage map\n| Folder | Verifies |\n|---|---|\n| 00 | App up, OpenAPI public, 401 without/with wrong credentials |\n| 01 | Axis 3-month spend rule, exclusions (fuel/cash/wallet), new-card exception, idempotent re-issue |\n| 02 | HDFC debit: spend + voucher (missing / malformed / unknown / other card / used / expired / valid), single-use voucher |\n| 03 | HDFC credit tiers: Infinia unlimited, Millennia quota, Regalia Gold approve |\n| 04 | Generic fallback (ICICI) and UNSUPPORTED_CARD (Kotak) |\n| 05 | BIN lookup, CARD_NOT_FOUND, CUSTOMER_MISMATCH, bean validation, malformed JSON |\n| 06 | Full quota exhaustion on a 3-visit card |\n| 07 | Redeem happy path, double redeem, wrong lounge, unknown token, validation |\n| 08 | Analytics: totals, rates, denial breakdown, banks, tiers, peak hours, parameter validation |\n\n## Manual-only scenarios (not automatable in one run)\n* **Expired pass (HTTP 410)**: start with `--lounge.pass.validity-minutes=1`, run 1.1, wait 61 seconds, run 7.4 -> 410 Gone with *Pass expired*. The quota is released automatically (re-run 1.1 -> new pass, `visitsRemaining` back to 1).\n* **Blocked / expired card (CARD_INACTIVE)**: in the H2 console (`/h2-console`, JDBC URL `jdbc:h2:mem:loungedb`, user `sa`) run `UPDATE cards SET active = FALSE WHERE last4 = '0011';` then run 1.1 -> `CARD_INACTIVE`.\n* **Quarter / month boundaries**: demo data is generated relative to today. To test boundaries, insert rows into `spend_history` with dates on the first/last day of the window and re-run the relevant request.\n* **Concurrency**: fire request 6.1 twice in parallel (Runner with iterations is sequential; use two Postman windows or `curl &`) - the card row lock guarantees quota is never over-consumed.\n\n## Test-data cheat sheet\n| customerId | PAN | Scenario |\n|---:|---|---|\n| 1 | 4147200000000011 | Axis ACE qualifying |\n| 2 | 4147200000000029 | Axis ACE new card |\n| 3 | 4147200000000037 | Axis ACE low spend |\n| 4 | 4386100000000013 | HDFC Platinum Debit (vouchers 482915037261 valid, 719304286150 expired, 260481937502 used) |\n| 5 | 4386100000000021 | HDFC Platinum Debit low spend (voucher 530918274466) |\n| 6 | 4386200000000019 | HDFC Infinia |\n| 7 | 5241900000000012 | HDFC Millennia, quota used |\n| 8 | 5241910000000010 | HDFC Regalia Gold |\n| 9 | 6521000000000012 | ICICI Coral |\n| 10 | 4000100000000018 | Kotak (unsupported) |\n",
+    "description": "# Airport Lounge Access System - API test collection\n\n## Setup\n1. Start the app from a **fresh JVM**: `mvn spring-boot:run` (H2 is in-memory, demo data is re-seeded on every start).\n2. Postman -> **Import** `LoungeAccessSystem.postman_collection.json` and `LoungeAccessSystem.postman_environment.json`; select the *LoungeAccessSystem - Local* environment.\n3. Credentials are HTTP Basic `reception` / `lounge@123` (collection-level auth, change in the environment if you changed `lounge.security.*`).\n\n## Running\n* **Collection Runner** (recommended): run all folders in order, delay 0 ms, *Persist variables* off. Every request has tests; the whole run should be green.\n* **Manual**: open a request, read its *Description* (purpose, preconditions, steps, expected result), press **Send**, check **Test Results**.\n* **Folder 09 uploads files** from `samples/statements/`. Set Postman *Settings -> General -> Working directory* to the project root (or re-select the files in each request's Body tab). Newman: `newman run postman/LoungeAccessSystem.postman_collection.json -e postman/LoungeAccessSystem.postman_environment.json --working-dir .`. Folder 09 is stateless and can run on its own, in any order, any number of times.\n* Folders 00-08 are order-dependent: tests store pass tokens in collection variables (`passToken_*`) and later folders consume them, and approvals consume quota/vouchers.\n* **Re-running** the whole collection needs an app restart (quota, vouchers and passes are real state). Before restarting, you can also reset the collection variables `passToken_*`.\n\n## Coverage map\n| Folder | Verifies |\n|---|---|\n| 00 | App up, OpenAPI public, 401 without/with wrong credentials |\n| 01 | Axis 3-month spend rule, exclusions (fuel/cash/wallet), new-card exception, idempotent re-issue |\n| 02 | HDFC debit: spend + voucher (missing / malformed / unknown / other card / used / expired / valid), single-use voucher |\n| 03 | HDFC credit tiers: Infinia unlimited, Millennia quota, Regalia Gold approve |\n| 04 | Generic fallback (ICICI) and UNSUPPORTED_CARD (Kotak) |\n| 05 | BIN lookup, CARD_NOT_FOUND, CUSTOMER_MISMATCH, bean validation, malformed JSON |\n| 06 | Full quota exhaustion on a 3-visit card |\n| 07 | Redeem happy path, double redeem, wrong lounge, unknown token, validation |\n| 08 | Analytics: totals, rates, denial breakdown, banks, tiers, peak hours, parameter validation |\n| 09 | **Statement analysis**: upload Aug/Sep/Oct statements -> eligibility for Nov, why / why not, and the spend needed in Nov to qualify for Dec (Axis rolling window, HDFC quarterly window, new-card exception, quota, missing months, duplicates, text/PDF, validation, security) |\n\n## Manual-only scenarios (not automatable in one run)\n* **Password-protected PDF statement**: attach the PDF as a `statements` file and add the text field `pdfPassword`. A wrong/missing password returns 400 `...is password protected`. PDF text extraction is best-effort (layouts differ per bank); the response lists `files[].transactionsParsed` and `linesSkipped` so you can verify the parse, and CSV is always the most reliable input.\n* **Default target month**: omit `targetMonth` and the API evaluates *next month* relative to the server clock (Asia/Kolkata).\n* **Expired pass (HTTP 410)**: start with `--lounge.pass.validity-minutes=1`, run 1.1, wait 61 seconds, run 7.4 -> 410 Gone with *Pass expired*. The quota is released automatically (re-run 1.1 -> new pass, `visitsRemaining` back to 1).\n* **Blocked / expired card (CARD_INACTIVE)**: in the H2 console (`/h2-console`, JDBC URL `jdbc:h2:mem:loungedb`, user `sa`) run `UPDATE cards SET active = FALSE WHERE last4 = '0011';` then run 1.1 -> `CARD_INACTIVE`.\n* **Quarter / month boundaries**: demo data is generated relative to today. To test boundaries, insert rows into `spend_history` with dates on the first/last day of the window and re-run the relevant request.\n* **Concurrency**: fire request 6.1 twice in parallel (Runner with iterations is sequential; use two Postman windows or `curl &`) - the card row lock guarantees quota is never over-consumed.\n\n## Test-data cheat sheet\n| customerId | PAN | Scenario |\n|---:|---|---|\n| 1 | 4147200000000011 | Axis ACE qualifying |\n| 2 | 4147200000000029 | Axis ACE new card |\n| 3 | 4147200000000037 | Axis ACE low spend |\n| 4 | 4386100000000013 | HDFC Platinum Debit (vouchers 482915037261 valid, 719304286150 expired, 260481937502 used) |\n| 5 | 4386100000000021 | HDFC Platinum Debit low spend (voucher 530918274466) |\n| 6 | 4386200000000019 | HDFC Infinia |\n| 7 | 5241900000000012 | HDFC Millennia, quota used |\n| 8 | 5241910000000010 | HDFC Regalia Gold |\n| 9 | 6521000000000012 | ICICI Coral |\n| 10 | 4000100000000018 | Kotak (unsupported) |\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -31,7 +31,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "c34315a7-e8b4-4489-ad28-8676aefd66c6",
+                "id": "f70bafa2-9091-4043-acdc-111a401783e1",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -69,7 +69,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "09ac31eb-29cd-4ed6-9220-78b75dc4ba61",
+                "id": "25218784-269d-4a73-895b-66f851c32e70",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
@@ -105,7 +105,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "72e82160-b830-477b-81f2-07570be326fe",
+                "id": "ea37f15d-6fed-435a-ac20-531607fc02ac",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
@@ -159,7 +159,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "3b84e522-d34f-4365-959c-25d6625a66de",
+                "id": "56f241ab-2db2-44c3-8702-b809d7e8559d",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -214,7 +214,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "d421e7a5-b37c-402b-aa12-34f348b96075",
+                "id": "09967674-66c7-4d2f-90d0-be3c78b4cc5d",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -269,7 +269,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "bb6888e4-de59-4fd6-ba82-b400dd053dc7",
+                "id": "d368da1b-7f3a-43b0-bda1-c44643500bb7",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -324,7 +324,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "80e50c20-581c-4628-ad31-2445990164ff",
+                "id": "3037bc30-7bb0-4fa7-9872-c99ddebefb31",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -384,7 +384,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "1389dbdd-bf3c-455b-a616-60f9979dc2cf",
+                "id": "dbb7992a-4b63-406c-8b89-99a26edbd8be",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -437,7 +437,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "541b8070-4251-4f69-980e-ab2b0c979b04",
+                "id": "89a5eb53-03ba-4123-8b9c-0d70fab51ef2",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -491,7 +491,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "7e59af95-4490-4b7b-ae69-c42c25665d8e",
+                "id": "03282a5c-ae4b-4179-a7ab-5194fdd629f3",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -545,7 +545,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "4b00a40b-3e1d-4cd1-bd74-d61102dbc659",
+                "id": "9a631561-6e93-402b-8ed3-3fa0fe6f5aa6",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -599,7 +599,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "8681617e-5659-43f0-97eb-39b45cd21106",
+                "id": "5ab7974d-d751-4edc-909f-2354f2ebc081",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -653,7 +653,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "7de098ef-95e9-4fe4-b975-c96dd4ff16f7",
+                "id": "86130be0-5be7-4120-9796-08a85f7ef76a",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -708,7 +708,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "4ee7e752-45d9-4216-bfee-f3512c935c0b",
+                "id": "11ca84ae-4f4a-409b-9221-d6d56a3129d4",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -763,7 +763,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "46af1ccd-1c21-4622-8df7-c73c8b5e5664",
+                "id": "913d90e2-c821-4dcb-ba23-14cb03cf1754",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -823,7 +823,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "7da3654c-bc39-4814-a500-ffccf69c23bc",
+                "id": "8d033405-8337-4690-b027-eaee4fe69712",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -877,7 +877,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "fae0acd6-fd3c-4365-a4ee-4f0bace9f886",
+                "id": "ce6a16ef-771d-48a5-bf02-10b625d6d09c",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -931,7 +931,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "54f81aa0-ab7c-4925-8c08-615a0fd015a3",
+                "id": "ca1a6c67-fa89-4fb1-9caa-fb8b50a459ea",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -992,7 +992,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "ec97c8e1-5ab8-4f21-94ef-6f73a2bcdff5",
+                "id": "53f37980-df5a-4131-8495-20c3a3fa70f5",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1047,7 +1047,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "fba05b3a-29b1-421a-9951-f4a241d578c0",
+                "id": "4330c28b-a03f-4941-ac4e-75a6eaa165f7",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1106,7 +1106,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "15bdac23-bbe6-4c9a-bed7-af8a2ec9dd5f",
+                "id": "6fbb2e0c-fbfc-4e88-8ac0-cf1c084ba831",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1160,7 +1160,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "e6a09ac6-7598-4fa8-a1c9-ae205af36c8c",
+                "id": "1fcc567a-3965-475c-882e-c56d1136d142",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1213,7 +1213,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "6f37fdef-5451-44c9-8249-6a5fd2f3dcae",
+                "id": "27ad8768-41af-408f-82fd-809d61135ef0",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1266,7 +1266,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "24f44a56-3609-4220-a062-b14aea3984c6",
+                "id": "a5f7b844-2b94-4c75-81d6-9b5e6a1ab7d8",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1319,7 +1319,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "60d95e67-d961-4a0f-aa6b-61338a3242c1",
+                "id": "441a323a-3595-48df-831c-3cb4a9bef27f",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
@@ -1373,7 +1373,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "62c7ec28-0711-42de-bd2a-df82772e68e3",
+                "id": "78cc790b-b239-4b4f-8589-eda49c156c64",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
@@ -1425,7 +1425,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "b4acbaaa-ca4a-4806-8b12-6cb78259eeeb",
+                "id": "8d453b27-8d7a-4564-9c0e-d68c6d89621b",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));"
@@ -1478,7 +1478,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "2402f8a6-a8f5-4bea-8b6a-268512f6f3ce",
+                "id": "f7f8c636-0f9d-4fd5-bde2-eef8b242c72b",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1532,7 +1532,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "65ca55b8-a976-44eb-aaf5-6280b19a568b",
+                "id": "d118343b-ddec-428d-9c7f-44d2544cbc75",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1586,7 +1586,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "5d381e46-a07c-4dd7-b584-9cff70707e90",
+                "id": "f66096f3-da84-4bc9-9c1e-735d8788a36f",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200 (a business outcome is always returned as 200)\", () => pm.response.to.have.status(200));",
@@ -1646,7 +1646,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "ef1e5eb1-28cb-4a75-b324-569a4ca4df80",
+                "id": "356fb4b5-f654-40c5-8960-1c5b9e98fe42",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 404\", () => pm.response.to.have.status(404));",
@@ -1697,7 +1697,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "d10bece9-601e-4942-ba70-34add4946d9e",
+                "id": "b7806600-e933-4607-b0ef-f119c9020c69",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
@@ -1749,7 +1749,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "4ea6624b-b4ea-42d7-864f-a707207ea4e1",
+                "id": "917b166d-9271-4d8d-96db-aba6870ac6a5",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
@@ -1801,7 +1801,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "c2626ffc-1315-450f-86d6-5f26ae7a5e28",
+                "id": "575be80b-c6fd-4ba1-9456-ac6e4d04f088",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -1853,7 +1853,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "9e8ccac2-32a2-40da-b63a-af9b4324ec23",
+                "id": "61bd185c-9617-4aa4-bca0-b16cfca06e2f",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 409\", () => pm.response.to.have.status(409));",
@@ -1905,7 +1905,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "ec305950-a6ef-47af-85ce-beb52eb249f5",
+                "id": "629baab3-a128-4c54-8448-9bcb1d0e830e",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -1953,7 +1953,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "30d48a2c-98db-4811-b5d8-627461b7513d",
+                "id": "1f6feff7-6acc-4ae8-83b1-c1cf3cc2d7b6",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -2007,7 +2007,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "cbd4900a-fc87-4d1b-9259-5f12ac128a6c",
+                "id": "ef382ae6-5e42-4f1f-8327-a2bac50d197e",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -2059,7 +2059,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "26f545c2-6c70-4efc-80b2-af6c76cbe258",
+                "id": "bf6c2656-7e65-4803-97a8-4bab38615c2b",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -2100,7 +2100,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "a6a0652e-03f5-4bf3-9888-8b9a5029eec2",
+                "id": "1d0590f1-1e4f-45e0-bd2e-0f830a5f7301",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -2136,7 +2136,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "2f2c707d-1b12-4995-8f81-9ded1b9d059a",
+                "id": "ddced35b-a1f0-477f-8f06-9a6eab60a831",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
@@ -2172,7 +2172,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "6ce4f356-3990-4707-88e8-1653e3a17e1d",
+                "id": "e411a5ab-1aeb-46fd-b7a6-50f461b71d7c",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
@@ -2215,7 +2215,7 @@
             {
               "listen": "test",
               "script": {
-                "id": "2bc9dbd2-4989-4f89-b086-e837719e43b5",
+                "id": "e5774add-1c8f-467e-9a14-eccac12ed1f9",
                 "type": "text/javascript",
                 "exec": [
                   "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
@@ -2249,6 +2249,1450 @@
               ]
             },
             "description": "**Purpose**\nUpper bound check.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send with `hours=99999`.\n\n**Expected result**\n400 problem document."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 - Statement analysis (forecast eligibility from uploaded statements)",
+      "description": "`POST /api/v1/statements/analyze` (multipart). Upload the last 3 months of card statements (Aug, Sep, Oct 2026) and get: whether the card is eligible for lounge access in the target month (November 2026), a spend/category/merchant analysis, and - if not eligible, or to stay eligible - exactly how much qualifying spend is needed in November so that December 2026 qualifies. Stateless: every request in this folder is independent, so the folder can be run on its own and in any order. **File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.",
+      "item": [
+        {
+          "name": "9.1 Axis ACE - Aug/Sep/Oct statements qualify -> ELIGIBLE for Nov, plan to keep Dec",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "1d722035-3875-4956-9fd9-3e1d2ef1834c",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"status ELIGIBLE and eligibleForTargetMonth\", () => { pm.expect(j.status).to.eql(\"ELIGIBLE\"); pm.expect(j.eligibleForTargetMonth).to.be.true; });",
+                  "pm.test(\"rule is Axis, target 2026-11\", () => { pm.expect(j.ruleApplied).to.eql(\"AXIS_BANK\"); pm.expect(j.targetMonth).to.eql(\"2026-11\"); });",
+                  "pm.test(\"window = 1 Aug to 31 Oct 2026\", () => { pm.expect(j.window.start).to.eql(\"2026-08-01\"); pm.expect(j.window.end).to.eql(\"2026-10-31\"); pm.expect(j.window.months).to.eql([\"2026-08\",\"2026-09\",\"2026-10\"]); });",
+                  "pm.test(\"qualifying 66500 vs required 50000, surplus 16500\", () => { pm.expect(j.qualifyingSpendInWindow).to.eql(66500); pm.expect(j.requiredSpend).to.eql(50000); pm.expect(j.surplusOrShortfall).to.eql(16500); pm.expect(j.progressPercent).to.eql(100); });",
+                  "pm.test(\"data complete\", () => pm.expect(j.dataComplete).to.be.true);",
+                  "pm.test(\"monthly qualifying 21500 / 26300 / 18700\", () => pm.expect(j.monthlyBreakdown.map(m => m.qualifyingSpend)).to.eql([21500, 26300, 18700]));",
+                  "pm.test(\"all three months inside the window\", () => pm.expect(j.monthlyBreakdown.every(m => m.includedInWindow && m.hasData)).to.be.true);",
+                  "pm.test(\"excluded spend 17590 (fuel 6000, cash 8000, wallet 3000, fees 590)\", () => { pm.expect(j.excludedSpend.total).to.eql(17590); pm.expect(j.excludedSpend.byCategory.FUEL).to.eql(6000); pm.expect(j.excludedSpend.byCategory.CASH_WITHDRAWAL).to.eql(8000); pm.expect(j.excludedSpend.byCategory.WALLET_RELOAD).to.eql(3000); pm.expect(j.excludedSpend.byCategory.FEES_AND_CHARGES).to.eql(590); });",
+                  "pm.test(\"category breakdown flags non-qualifying categories\", () => { const nq = j.categoryBreakdown.filter(c => !c.qualifying).map(c => c.category).sort(); pm.expect(nq).to.eql([\"CASH_WITHDRAWAL\",\"FEES_AND_CHARGES\",\"FUEL\",\"WALLET_RELOAD\"]); });",
+                  "pm.test(\"top merchants (max 5, sorted)\", () => { pm.expect(j.topMerchants.length).to.eql(5); pm.expect(j.topMerchants[0].amount).to.be.at.least(j.topMerchants[1].amount); });",
+                  "pm.test(\"quota: 2 visits per quarter, none used\", () => { pm.expect(j.quota.visitsPerQuarter).to.eql(2); pm.expect(j.quota.visitsAvailable).to.eql(2); pm.expect(j.quota.quarterStart).to.eql(\"2026-10-01\"); });",
+                  "pm.test(\"plan: Dec 2026 needs 5000 more in Nov (Aug 21500 drops out)\", () => { const p = j.planForUpcomingMonths; pm.expect(p.planMonth).to.eql(\"2026-12\"); pm.expect(p.planMonthIsFollowingMonth).to.be.true; pm.expect(p.spendAlreadyBanked).to.eql(45000); pm.expect(p.additionalQualifyingSpendNeeded).to.eql(5000); pm.expect(p.monthsStillToCome).to.eql([\"2026-11\"]); pm.expect(p.monthsLeavingWindow).to.eql([\"2026-08\"]); pm.expect(p.spendLeavingWindow).to.eql(21500); pm.expect(p.alreadySecured).to.be.false; });",
+                  "pm.test(\"explanations present\", () => { pm.expect(j.summary).to.include(\"eligible\"); pm.expect(j.insights.length).to.be.above(2); pm.expect(j.recommendations.some(r => r.includes(\"stay eligible in December 2026\"))).to.be.true; pm.expect(j.assumptions.length).to.be.above(3); });",
+                  "pm.test(\"refund warning raised (1200 not netted)\", () => pm.expect(j.warnings.some(w => w.includes(\"Refunds\"))).to.be.true);",
+                  "pm.test(\"3 files parsed: 9 + 10 + 11 transactions, nothing skipped\", () => { pm.expect(j.files.map(f => f.transactionsParsed)).to.eql([9, 10, 11]); pm.expect(j.files.every(f => f.format === \"CSV\" && f.linesSkipped === 0)).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nHappy path from the requirement: three Axis ACE statements with 66,500 qualifying spend. Cash (8,000), fuel (6,000), wallet reloads (3,000) and fees (590) are excluded.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`. Sample files: `samples/statements/axis_ace_eligible_aug_2026.csv`, `samples/statements/axis_ace_eligible_sep_2026.csv`, `samples/statements/axis_ace_eligible_oct_2026.csv`.\n\n**Steps**\n1. Open the Body tab (form-data) and confirm 3 `statements` files plus bank=AXIS, cardType=CREDIT, productCode=ACE, targetMonth=2026-11.\n2. Click **Send**.\n3. Read `summary` and `status` (ELIGIBLE), then `qualifyingSpendInWindow` (66500) vs `requiredSpend` (50000).\n4. Read `monthlyBreakdown` (Aug 21,500 / Sep 26,300 / Oct 18,700 qualifying) and `excludedSpend` (17,590).\n5. Read `planForUpcomingMonths`: December needs 5,000 more qualifying spend in November because August (21,500) drops out of the window.\n6. Check the Test Results tab - all green.\n\n**Expected result**\n`eligibleForTargetMonth=true`, surplus 16,500, plan month 2026-12 needing 5,000 additional qualifying spend; quota 2 visits.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.2 Axis ACE - low qualifying spend -> NOT ELIGIBLE, steps for Nov to reach Dec",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "7e961110-d382-4c53-aea1-61e48adc1969",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"NOT_ELIGIBLE\", () => { pm.expect(j.status).to.eql(\"NOT_ELIGIBLE\"); pm.expect(j.eligibleForTargetMonth).to.be.false; });",
+                  "pm.test(\"qualifying 30800 vs 50000 -> shortfall 19200 (61.6%)\", () => { pm.expect(j.qualifyingSpendInWindow).to.eql(30800); pm.expect(j.surplusOrShortfall).to.eql(-19200); pm.expect(j.progressPercent).to.eql(61.6); });",
+                  "pm.test(\"why: 36000 excluded = 53.9% of all spend\", () => { pm.expect(j.excludedSpend.total).to.eql(36000); pm.expect(j.excludedSpend.percentOfAllSpend).to.eql(53.9); pm.expect(j.excludedSpend.byCategory.FUEL).to.eql(18000); pm.expect(j.excludedSpend.byCategory.WALLET_RELOAD).to.eql(10000); pm.expect(j.excludedSpend.byCategory.CASH_WITHDRAWAL).to.eql(8000); });",
+                  "pm.test(\"plan: Nov needs 29000 so that Dec qualifies\", () => { const p = j.planForUpcomingMonths; pm.expect(p.planMonth).to.eql(\"2026-12\"); pm.expect(p.spendAlreadyBanked).to.eql(21000); pm.expect(p.requiredSpend).to.eql(50000); pm.expect(p.additionalQualifyingSpendNeeded).to.eql(29000); pm.expect(p.perMonthTarget).to.eql(29000); pm.expect(p.perWeekTarget).to.be.above(6000); pm.expect(p.alreadySecured).to.be.false; });",
+                  "pm.test(\"summary says NOT eligible and quotes the shortfall\", () => { pm.expect(j.summary).to.include(\"NOT eligible\"); pm.expect(j.summary).to.include(\"19,200\"); });",
+                  "pm.test(\"step-by-step recommendations\", () => { pm.expect(j.recommendations.some(r => r.startsWith(\"Step 1\") && r.includes(\"December 2026\") && r.includes(\"29,000\"))).to.be.true; pm.expect(j.recommendations.some(r => r.includes(\"Stop wasting spend\"))).to.be.true; pm.expect(j.recommendations.some(r => r.includes(\"targetMonth=2026-12\"))).to.be.true; });",
+                  "pm.test(\"no refund warning in this data set\", () => pm.expect(j.warnings.some(w => w.includes(\"Refunds\"))).to.be.false);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nThe failure path from the requirement. Qualifying spend is only 30,800 because 36,000 (54%) went on fuel, wallet reloads and cash. The response explains why, and what to do in November so that December qualifies.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`. Sample files: `samples/statements/axis_ace_not_eligible_aug_2026.csv`, `samples/statements/axis_ace_not_eligible_sep_2026.csv`, `samples/statements/axis_ace_not_eligible_oct_2026.csv`.\n\n**Steps**\n1. Send the request (3 `not_eligible` files, Axis ACE, targetMonth 2026-11).\n2. Read `summary`: NOT eligible, shortfall 19,200.\n3. Read `excludedSpend` - fuel 18,000, wallet 10,000, cash 8,000 (53.9% of all spend) - this is *why* the card did not qualify.\n4. Read `planForUpcomingMonths`: November spending cannot rescue November (window closed) but 29,000 of qualifying spend in November makes December eligible (Sep 12,400 + Oct 8,600 + Nov 29,000 = 50,000).\n5. Follow `recommendations` Step 1..4 (what to spend, which categories count, what to stop, when to re-check).\n\n**Expected result**\n`status=NOT_ELIGIBLE`, shortfall -19,200, plan month 2026-12 with 29,000 additional qualifying spend (~6,698 per week).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.3 New card (issued Sep 2026) -> ELIGIBLE via new-card exception",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "1fc9d57d-8181-4381-80aa-db68d6263c4f",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"ELIGIBLE_NEW_CARD_EXCEPTION\", () => { pm.expect(j.status).to.eql(\"ELIGIBLE_NEW_CARD_EXCEPTION\"); pm.expect(j.eligibleForTargetMonth).to.be.true; });",
+                  "pm.test(\"spend itself is still below the threshold\", () => { pm.expect(j.qualifyingSpendInWindow).to.eql(30800); pm.expect(j.surplusOrShortfall).to.eql(-19200); });",
+                  "pm.test(\"recommendation mentions the exception end date\", () => pm.expect(j.recommendations[0]).to.include(\"valid until 2026-12-31\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nSame low-spend statements as 9.2 but the card was issued on 2026-09-10, so the Axis new-card exception (issue month + 3 months) applies through 2026-12-31.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request (NOT_ELIGIBLE files + cardIssueDate=2026-09-10).\n2. Note `status=ELIGIBLE_NEW_CARD_EXCEPTION` although spend is below 50,000.\n3. Read the first recommendation: the exception lasts until 2026-12-31 and you must build spend before then.\n\n**Expected result**\n`eligibleForTargetMonth=true`, status ELIGIBLE_NEW_CARD_EXCEPTION, qualifying spend still 30,800.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                },
+                {
+                  "key": "cardIssueDate",
+                  "value": "2026-09-10",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.4 Card issued long ago -> exception expired -> NOT ELIGIBLE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "b40ebc05-5c4b-4236-a556-66cdeca623fc",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"exception no longer applies\", () => { pm.expect(j.status).to.eql(\"NOT_ELIGIBLE\"); pm.expect(j.eligibleForTargetMonth).to.be.false; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nCard issued 2026-06-10: the exception ended on 2026-09-30, so spend is evaluated normally.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request with cardIssueDate=2026-06-10.\n\n**Expected result**\n`status=NOT_ELIGIBLE`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_not_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                },
+                {
+                  "key": "cardIssueDate",
+                  "value": "2026-06-10",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.5 Spend qualifies but quota used -> QUOTA_EXHAUSTED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "7d076ed0-7465-4efb-8298-648c55f6e39d",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"QUOTA_EXHAUSTED\", () => { pm.expect(j.status).to.eql(\"QUOTA_EXHAUSTED\"); pm.expect(j.eligibleForTargetMonth).to.be.false; });",
+                  "pm.test(\"spend still qualifies, no visits left\", () => { pm.expect(j.qualifyingSpendInWindow).to.eql(66500); pm.expect(j.quota.visitsAvailable).to.eql(0); pm.expect(j.quota.visitsUsed).to.eql(2); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nAxis allows 2 visits per quarter. With 2 already used in Q4 2026 the card cannot be used even though spend qualifies.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request with visitsUsedInTargetQuarter=2.\n2. Note `quota.visitsAvailable=0` and the status.\n\n**Expected result**\n`status=QUOTA_EXHAUSTED`, `eligibleForTargetMonth=false`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                },
+                {
+                  "key": "visitsUsedInTargetQuarter",
+                  "value": "2",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.6 October statement missing -> incomplete data warning",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "cbbe00d8-4ba4-4d4b-b8e8-5caff5b0f7df",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"NOT_ELIGIBLE on provided data, 47800 qualifying\", () => { pm.expect(j.status).to.eql(\"NOT_ELIGIBLE\"); pm.expect(j.qualifyingSpendInWindow).to.eql(47800); });",
+                  "pm.test(\"dataComplete false\", () => pm.expect(j.dataComplete).to.be.false);",
+                  "pm.test(\"warns that October 2026 has no transactions\", () => pm.expect(j.warnings.some(w => w.includes(\"No transactions found for October 2026\"))).to.be.true);",
+                  "pm.test(\"recommendations include a data note\", () => pm.expect(j.recommendations.some(r => r.startsWith(\"Data note\"))).to.be.true);",
+                  "pm.test(\"October month row exists with no data\", () => { const oct = j.monthlyBreakdown.find(m => m.month === \"2026-10\"); pm.expect(oct.hasData).to.be.false; pm.expect(oct.qualifyingSpend).to.eql(0); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nOnly August and September are attached. Qualifying spend (47,800) is just below the threshold, but the response flags that October is missing, so the result may be understated.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request with only the Aug and Sep files.\n2. Check `dataComplete=false` and the warnings about October 2026.\n3. Attach the October file (request 9.1) to get the real answer.\n\n**Expected result**\n`status=NOT_ELIGIBLE`, `dataComplete=false`, warnings naming October 2026.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.7 Text / PDF-style statement (single file, all 3 months)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "fcb59f46-be8e-4947-9b8c-65815cbf741a",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"same result as CSV upload\", () => { pm.expect(j.status).to.eql(\"ELIGIBLE\"); pm.expect(j.qualifyingSpendInWindow).to.eql(66500); });",
+                  "pm.test(\"one TEXT file with 30 transactions, none skipped\", () => { pm.expect(j.files.length).to.eql(1); pm.expect(j.files[0].format).to.eql(\"TEXT\"); pm.expect(j.files[0].transactionsParsed).to.eql(30); pm.expect(j.files[0].linesSkipped).to.eql(0); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nA plain-text export (same layout the PDF reader produces, e.g. `03/08/2026 AMAZON PAY INDIA MUMBAI 6,200.00 Dr`). PDFs go through the same parser after text extraction; for a password-protected PDF add the `pdfPassword` form field.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`. Sample file: `samples/statements/axis_ace_eligible_aug_oct_2026_statement.txt`.\n\n**Steps**\n1. Send the request with the single TXT file.\n2. Result must match 9.1 exactly (66,500 qualifying).\n\n**Expected result**\n`ELIGIBLE`, 30 transactions parsed, format TEXT.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_oct_2026_statement.txt"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.8 Overlapping uploads (Aug attached twice) -> counted once",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "fa9ba5d7-79dd-49bd-a382-3cb8c365d03a",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"totals unchanged by the duplicate file\", () => pm.expect(j.qualifyingSpendInWindow).to.eql(66500));",
+                  "pm.test(\"duplicate warning\", () => pm.expect(j.warnings.some(w => w.includes(\"9 transaction(s) appeared in more than one file\"))).to.be.true);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nStatement cycles often overlap, or a file is attached twice. Identical transactions that appear in more than one file are counted once.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send 4 files (Aug, Sep, Oct, Aug again).\n2. Qualifying spend must still be 66,500 and a de-duplication warning must appear.\n\n**Expected result**\nSame totals as 9.1 plus a warning that 9 transactions were counted once.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.9 HDFC Millennia (quarterly rule) -> NOT ELIGIBLE, plan points to January 2027",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "959ab4e2-f162-4de8-a806-6657b7cba94b",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"quarterly window Jul-Sep 2026, rule HDFC_CREDIT\", () => { pm.expect(j.ruleApplied).to.eql(\"HDFC_CREDIT\"); pm.expect(j.window.start).to.eql(\"2026-07-01\"); pm.expect(j.window.end).to.eql(\"2026-09-30\"); });",
+                  "pm.test(\"47800 of 100000 -> NOT_ELIGIBLE, 1 visit per quarter\", () => { pm.expect(j.status).to.eql(\"NOT_ELIGIBLE\"); pm.expect(j.qualifyingSpendInWindow).to.eql(47800); pm.expect(j.requiredSpend).to.eql(100000); pm.expect(j.quota.visitsPerQuarter).to.eql(1); });",
+                  "pm.test(\"July missing -> dataComplete false\", () => pm.expect(j.dataComplete).to.be.false);",
+                  "pm.test(\"plan targets January 2027 (Oct+Nov+Dec)\", () => { const p = j.planForUpcomingMonths; pm.expect(p.planMonth).to.eql(\"2027-01\"); pm.expect(p.planMonthIsFollowingMonth).to.be.false; pm.expect(p.windowMonths).to.eql([\"2026-10\",\"2026-11\",\"2026-12\"]); pm.expect(p.spendAlreadyBanked).to.eql(18700); pm.expect(p.additionalQualifyingSpendNeeded).to.eql(81300); pm.expect(p.perMonthTarget).to.eql(40650); pm.expect(p.monthsStillToCome).to.eql([\"2026-11\",\"2026-12\"]); pm.expect(p.followingMonthOutlook).to.include(\"already closed\"); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nHDFC credit cards use the PREVIOUS calendar quarter. For November 2026 that is Jul-Sep 2026; October and November spend cannot help November or December - the first month they count is January 2027 (window Oct-Dec).\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request (same eligible Axis files, bank=HDFC, productCode=MILLENNIA).\n2. Read the window: 2026-07-01 to 2026-09-30 (July is missing -> dataComplete=false).\n3. Read `planForUpcomingMonths`: planMonth 2027-01, October (18,700) already banked, 81,300 needed over Nov + Dec (40,650 per month).\n4. Read `followingMonthOutlook`: December's window is already closed.\n\n**Expected result**\n`NOT_ELIGIBLE`, window Jul-Sep, plan month 2027-01 needing 81,300.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "HDFC",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "MILLENNIA",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.10 HDFC Infinia -> ELIGIBLE, no spend requirement, unlimited visits",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "407b02d2-40aa-4fd6-8cb9-8d807690c4db",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"ELIGIBLE with no requirement\", () => { pm.expect(j.status).to.eql(\"ELIGIBLE\"); pm.expect(j.requiredSpend).to.eql(0); pm.expect(j.dataComplete).to.be.true; });",
+                  "pm.test(\"unlimited visits\", () => { pm.expect(j.quota.visitsPerQuarter).to.eql(-1); pm.expect(j.quota.visitsAvailable).to.eql(-1); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nInfinia / Diners Black have no spend threshold and unlimited access.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request with productCode=INFINIA.\n\n**Expected result**\n`ELIGIBLE`, `requiredSpend=0`, `visitsAvailable=-1`, no missing-data noise.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "HDFC",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "INFINIA",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.11 Unsupported bank/card -> NOT_SUPPORTED",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "b19284d0-26e1-4d8f-8bfb-5d44cff1260d",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 200\", () => pm.response.to.have.status(200));",
+                  "pm.test(\"Response time < 3000 ms\", () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+                  "const j = pm.response.json();",
+                  "pm.test(\"NOT_SUPPORTED\", () => { pm.expect(j.status).to.eql(\"NOT_SUPPORTED\"); pm.expect(j.eligibleForTargetMonth).to.be.false; });",
+                  "pm.test(\"explains why\", () => pm.expect(j.summary).to.include(\"No lounge programme\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nNo lounge programme is configured for Kotak.\n\n**Preconditions**\n**File upload:** the three files are attached with relative paths (`samples/statements/...`). In Postman set *Settings -> General -> Working directory* to the project root (or re-select the files in the Body tab). With Newman use `--working-dir <project root>`.\n\n**Steps**\n1. Send the request with bank=KOTAK.\n\n**Expected result**\n`NOT_SUPPORTED`, explanatory text, still HTTP 200.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "KOTAK",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "DEBIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "811",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.12 Validation - no statement attached -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "67c61047-3d15-47bf-baf5-16e598da1af5",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nThe `statements` part is mandatory.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Remove all files from the Body tab and Send.\n\n**Expected result**\n400 problem document.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.13 Validation - unsupported file type -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "357b870d-b4b3-4c91-bab6-ea279aba0ee2",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Bad Request\", () => pm.expect(p.title).to.eql(\"Bad Request\"));",
+                  "pm.test(\"detail contains \\\"Unsupported file type\\\"\", () => pm.expect(p.detail).to.include(\"Unsupported file type\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nOnly CSV, TXT and PDF are accepted.\n\n**Preconditions**\nFile `postman/TESTING_GUIDE.md` exists (any non-CSV/TXT/PDF file works).\n\n**Steps**\n1. Send a Markdown file as the statement.\n\n**Expected result**\n400 with detail `Unsupported file type`.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "postman/TESTING_GUIDE.md"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.14 Validation - file without a transaction table -> 422",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "f6210dd0-9707-4e5e-ad5a-e7cc0675af26",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 422\", () => pm.response.to.have.status(422));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 422\", () => pm.expect(p.status).to.eql(422));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Unprocessable Entity\", () => pm.expect(p.title).to.eql(\"Unprocessable Entity\"));",
+                  "pm.test(\"detail contains \\\"invalid_statement.csv\\\"\", () => pm.expect(p.detail).to.include(\"invalid_statement.csv\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nA CSV that contains no recognisable header/rows cannot be analysed.\n\n**Preconditions**\nSample `samples/statements/invalid_statement.csv`.\n\n**Steps**\n1. Send the file.\n\n**Expected result**\n422 Unprocessable Entity with the file name in the message.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/invalid_statement.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.15 Validation - unknown bank value -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "2161fd42-a6a8-479b-84ed-1e89c299e566",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\n`bank` must be one of AXIS, HDFC, ICICI, SBI, KOTAK.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send bank=HSBC.\n\n**Expected result**\n400.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "HSBC",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.16 Validation - wrong targetMonth format -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "4120473c-657a-438a-9a9a-0fb0a6b227a8",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\ntargetMonth must be yyyy-MM.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send targetMonth=11-2026.\n\n**Expected result**\n400.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "11-2026",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.17 Validation - missing productCode -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "dac81b39-06c0-4890-b61d-55249bc7ebc0",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nproductCode is mandatory.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send without productCode.\n\n**Expected result**\n400.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.18 Validation - negative visitsUsedInTargetQuarter -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "61ba063f-6d48-47be-bbd2-cdcaa23dcbde",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 400\", () => pm.response.to.have.status(400));",
+                  "const p = pm.response.json();",
+                  "pm.test(\"RFC 7807 body with status 400\", () => pm.expect(p.status).to.eql(400));",
+                  "pm.test(\"no stack trace leaked\", () => pm.expect(JSON.stringify(p)).to.not.include(\"Exception\"));",
+                  "pm.test(\"title = Validation Error\", () => pm.expect(p.title).to.eql(\"Validation Error\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nMust be >= 0.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send visitsUsedInTargetQuarter=-1.\n\n**Expected result**\n400 with a validation error.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_sep_2026.csv"
+                },
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_oct_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                },
+                {
+                  "key": "visitsUsedInTargetQuarter",
+                  "value": "-1",
+                  "type": "text"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "9.19 Security - no credentials -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "id": "c097b1c5-85e2-4f13-ba71-c0d8555a8b0a",
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"HTTP 401\", () => pm.response.to.have.status(401));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/statements/analyze",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "statements",
+                "analyze"
+              ]
+            },
+            "description": "**Purpose**\nThe upload endpoint is protected like the rest of the API.\n\n**Preconditions**\nNone.\n\n**Steps**\n1. Send without authorization.\n\n**Expected result**\n401.",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "statements",
+                  "type": "file",
+                  "src": "samples/statements/axis_ace_eligible_aug_2026.csv"
+                },
+                {
+                  "key": "bank",
+                  "value": "AXIS",
+                  "type": "text"
+                },
+                {
+                  "key": "cardType",
+                  "value": "CREDIT",
+                  "type": "text"
+                },
+                {
+                  "key": "productCode",
+                  "value": "ACE",
+                  "type": "text"
+                },
+                {
+                  "key": "targetMonth",
+                  "value": "2026-11",
+                  "type": "text"
+                }
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
           },
           "response": []
         }

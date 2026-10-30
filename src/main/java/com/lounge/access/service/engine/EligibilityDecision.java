@@ -2,6 +2,7 @@ package com.lounge.access.service.engine;
 
 import com.lounge.access.dto.DenialReason;
 import com.lounge.access.entity.Voucher;
+import com.lounge.access.util.LoungeConstants;
 
 /**
  * Outcome of a strategy evaluation.
@@ -15,7 +16,7 @@ public record EligibilityDecision(boolean eligible,
                                   int visitsRemaining,
                                   Voucher voucherToConsume) {
 
-    public static final int UNLIMITED = -1;
+    public static final int UNLIMITED = LoungeConstants.UNLIMITED_VISITS;
 
     public static EligibilityDecision approve(String message, int visitsRemaining, Voucher voucher) {
         return new EligibilityDecision(true, null, message, visitsRemaining, voucher);

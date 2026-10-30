@@ -8,7 +8,8 @@
 ## Running
 * **Collection Runner** (recommended): run all folders in order, delay 0 ms, *Persist variables* off. Every request has tests; the whole run should be green.
 * **Manual**: open a request, read its *Description* (purpose, preconditions, steps, expected result), press **Send**, check **Test Results**.
-* Folders are order-dependent: tests store pass tokens in collection variables (`passToken_*`) and later folders consume them, and approvals consume quota/vouchers.
+* **Folder 09 uploads files** from `samples/statements/`. Set Postman *Settings -> General -> Working directory* to the project root (or re-select the files in each request's Body tab). Newman: `newman run postman/LoungeAccessSystem.postman_collection.json -e postman/LoungeAccessSystem.postman_environment.json --working-dir .`. Folder 09 is stateless and can run on its own, in any order, any number of times.
+* Folders 00-08 are order-dependent: tests store pass tokens in collection variables (`passToken_*`) and later folders consume them, and approvals consume quota/vouchers.
 * **Re-running** the whole collection needs an app restart (quota, vouchers and passes are real state). Before restarting, you can also reset the collection variables `passToken_*`.
 
 ## Coverage map
@@ -23,8 +24,11 @@
 | 06 | Full quota exhaustion on a 3-visit card |
 | 07 | Redeem happy path, double redeem, wrong lounge, unknown token, validation |
 | 08 | Analytics: totals, rates, denial breakdown, banks, tiers, peak hours, parameter validation |
+| 09 | **Statement analysis**: upload Aug/Sep/Oct statements -> eligibility for Nov, why / why not, and the spend needed in Nov to qualify for Dec (Axis rolling window, HDFC quarterly window, new-card exception, quota, missing months, duplicates, text/PDF, validation, security) |
 
 ## Manual-only scenarios (not automatable in one run)
+* **Password-protected PDF statement**: attach the PDF as a `statements` file and add the text field `pdfPassword`. A wrong/missing password returns 400 `...is password protected`. PDF text extraction is best-effort (layouts differ per bank); the response lists `files[].transactionsParsed` and `linesSkipped` so you can verify the parse, and CSV is always the most reliable input.
+* **Default target month**: omit `targetMonth` and the API evaluates *next month* relative to the server clock (Asia/Kolkata).
 * **Expired pass (HTTP 410)**: start with `--lounge.pass.validity-minutes=1`, run 1.1, wait 61 seconds, run 7.4 -> 410 Gone with *Pass expired*. The quota is released automatically (re-run 1.1 -> new pass, `visitsRemaining` back to 1).
 * **Blocked / expired card (CARD_INACTIVE)**: in the H2 console (`/h2-console`, JDBC URL `jdbc:h2:mem:loungedb`, user `sa`) run `UPDATE cards SET active = FALSE WHERE last4 = '0011';` then run 1.1 -> `CARD_INACTIVE`.
 * **Quarter / month boundaries**: demo data is generated relative to today. To test boundaries, insert rows into `spend_history` with dates on the first/last day of the window and re-run the relevant request.

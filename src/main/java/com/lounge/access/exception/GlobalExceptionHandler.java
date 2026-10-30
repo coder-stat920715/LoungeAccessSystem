@@ -1,5 +1,6 @@
 package com.lounge.access.exception;
 
+import com.lounge.access.service.statement.StatementParseException;
 import jakarta.validation.ConstraintViolationException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
@@ -37,6 +38,12 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(LoungeException.class)
     public ProblemDetail handleLounge(LoungeException ex) {
         return problem(ex.getStatus(), ex.getStatus().getReasonPhrase(), ex.getMessage());
+    }
+
+    @ExceptionHandler(StatementParseException.class)
+    public ProblemDetail handleStatementParse(StatementParseException ex) {
+        HttpStatus status = HttpStatus.valueOf(ex.getHttpStatus());
+        return problem(status, status.getReasonPhrase(), ex.getMessage());
     }
 
     @ExceptionHandler(ConstraintViolationException.class)
